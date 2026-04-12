@@ -1,0 +1,27 @@
+{
+	"name": "laundry-predictor",
+	"module": "src/index.ts",
+	"type": "module",
+	"private": true,
+	"scripts": {
+		"start": "bun run src/index.ts",
+		"dev": "bun --watch run src/index.ts",
+		"pm2": "pm2 start ecosystem.yml"
+	},
+	"dependencies": {},
+	"devDependencies": {
+		"@lioness100/configs": "^1.0.34",
+		"@types/bun": "latest",
+		"eslint": "^8.57.0",
+		"pm2": "^6.0.11",
+		"prettier": "^3.6.2",
+		"typescript": "^5.8.3"
+	},
+	"peerDependencies": {},
+	"prettier": "@lioness100/configs/prettier",
+	"eslintConfig": {
+		"extends": [
+			"./node_modules/@lioness100/configs/.eslintrc.json"
+		]
+	}
+}

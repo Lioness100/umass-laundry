@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Laundry Load Observatory</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="ambient ambient-one"></div>
+    <div class="ambient ambient-two"></div>
+
+    <main class="layout">
+      <header class="hero panel">
+        <div>
+          <p class="eyebrow">Laundry Analytics</p>
+          <h1>Laundry Load Observatory</h1>
+          <p class="hero-copy">
+            Track machine availability over time and discover your best windows
+            for quiet, low-wait laundry runs.
+          </p>
+        </div>
+        <div class="hero-actions">
+          <span id="status-pill" class="status-pill">Loading...</span>
+          <button id="poll-now-btn" class="secondary-button" type="button">
+            Poll Now
+          </button>
+        </div>
+      </header>
+
+      <section class="controls panel">
+        <label>
+          Lookback days
+          <select id="days-select">
+            <option value="7">7</option>
+            <option value="14">14</option>
+            <option value="21" selected>21</option>
+            <option value="30">30</option>
+            <option value="60">60</option>
+          </select>
+        </label>
+
+        <label>
+          Timeline hours
+          <select id="hours-select">
+            <option value="24">24</option>
+            <option value="48">48</option>
+            <option value="72" selected>72</option>
+            <option value="168">168</option>
+            <option value="336">336</option>
+          </select>
+        </label>
+
+        <label>
+          Room
+          <select id="room-select">
+            <option value="">All rooms</option>
+          </select>
+        </label>
+
+        <button id="refresh-btn" class="primary-button" type="button">
+          Refresh
+        </button>
+        <p id="last-updated" class="last-updated">
+          Waiting for first sample...
+        </p>
+      </section>
+
+      <section class="kpi-grid">
+        <article class="panel kpi-card">
+          <h2>Current Load</h2>
+          <p id="kpi-current-load" class="kpi-value">--</p>
+          <p id="kpi-current-caption" class="kpi-caption">No data yet</p>
+        </article>
+
+        <article class="panel kpi-card">
+          <h2>Free Machines</h2>
+          <p id="kpi-free-machines" class="kpi-value">--</p>
+          <p id="kpi-free-caption" class="kpi-caption">No data yet</p>
+        </article>
+
+        <article class="panel kpi-card">
+          <h2>Best Time Slot</h2>
+          <p id="kpi-best-slot" class="kpi-value">--</p>
+          <p id="kpi-best-caption" class="kpi-caption">
+            Needs historical samples
+          </p>
+        </article>
+
+        <article class="panel kpi-card">
+          <h2>Average Load</h2>
+          <p id="kpi-average-load" class="kpi-value">--</p>
+          <p id="kpi-average-caption" class="kpi-caption">
+            Across selected timeline
+          </p>
+        </article>
+      </section>
+
+      <section class="content-grid">
+        <article class="panel chart-panel">
+          <div class="panel-head">
+            <h2>Timeline</h2>
+            <p id="timeline-summary">No samples yet</p>
+          </div>
+          <svg
+            id="timeline-chart"
+            viewBox="0 0 900 280"
+            preserveAspectRatio="none"
+          ></svg>
+        </article>
+
+        <article class="panel best-panel">
+          <div class="panel-head">
+            <h2>Best Windows</h2>
+            <p>Lower occupancy means less waiting</p>
+          </div>
+          <ol id="best-times-list" class="best-times-list"></ol>
+        </article>
+      </section>
+
+      <section class="panel heatmap-panel">
+        <div class="panel-head">
+          <h2>Weekly Heatmap</h2>
+          <p>Average load by day and hour</p>
+        </div>
+        <div id="heatmap-grid" class="heatmap-grid"></div>
+        <div class="legend">
+          <span>Quiet</span>
+          <div class="legend-gradient"></div>
+          <span>Busy</span>
+        </div>
+      </section>
+
+      <section class="panel rooms-panel">
+        <div class="panel-head">
+          <h2>Current Room Snapshot</h2>
+          <p>Latest poll by room</p>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Room</th>
+                <th>Washers Free</th>
+                <th>Dryers Free</th>
+                <th>Load</th>
+              </tr>
+            </thead>
+            <tbody id="rooms-table-body"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel failures-panel">
+        <div class="panel-head">
+          <h2>Recent Poll Errors</h2>
+          <p>
+            Last few failures to help troubleshoot connectivity or credentials
+          </p>
+        </div>
+        <ul id="failures-list" class="failures-list"></ul>
+      </section>
+    </main>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
