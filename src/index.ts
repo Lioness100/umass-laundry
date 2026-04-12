@@ -10,7 +10,7 @@ await poller.start();
 
 const server = createServer(config, repository, poller);
 
-console.log(`[server] Laundry predictor running on http://localhost:${server.port}`);
+console.log(`[server] UMass Laundry running on http://localhost:${server.port}`);
 console.log(`[server] Poll interval: ${Math.round(config.pollIntervalMs / 1000)} seconds`);
 
 async function shutdown(signal: string): Promise<void> {

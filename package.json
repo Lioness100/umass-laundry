@@ -1,5 +1,5 @@
 {
-	"name": "laundry-predictor",
+	"name": "umass-laundry",
 	"module": "src/index.ts",
 	"type": "module",
 	"private": true,
