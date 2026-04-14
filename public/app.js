@@ -1,7 +1,4 @@
 const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-const LAYOUT_BASE_WIDTH_PX = 1180;
-const LAYOUT_SCALE_BREAKPOINT_PX = 1280;
-const LAYOUT_TARGET_WIDTH_RATIO = 0.84;
 
 const state = {
 	days: 21,
@@ -26,7 +23,6 @@ const elements = {
 	bestCaption: document.querySelector('#kpi-best-caption'),
 	averageLoad: document.querySelector('#kpi-average-load'),
 	averageCaption: document.querySelector('#kpi-average-caption'),
-	layout: document.querySelector('.layout'),
 	timelineSummary: document.querySelector('#timeline-summary'),
 	timelineChart: document.querySelector('#timeline-chart'),
 	bestTimesList: document.querySelector('#best-times-list'),
@@ -34,31 +30,6 @@ const elements = {
 	roomsTableBody: document.querySelector('#rooms-table-body'),
 	failuresList: document.querySelector('#failures-list')
 };
-
-function applyLayoutScale() {
-	if (!elements.layout) {
-		return;
-	}
-
-	const supportsZoom = typeof CSS !== 'undefined' && typeof CSS.supports === 'function' && CSS.supports('zoom', '1');
-	if (!supportsZoom) {
-		elements.layout.classList.remove('is-scaled');
-		document.documentElement.style.setProperty('--layout-scale', '1');
-		return;
-	}
-
-	if (window.innerWidth < LAYOUT_SCALE_BREAKPOINT_PX) {
-		elements.layout.classList.remove('is-scaled');
-		document.documentElement.style.setProperty('--layout-scale', '1');
-		return;
-	}
-
-	const targetWidthPx = window.innerWidth * LAYOUT_TARGET_WIDTH_RATIO;
-	const scale = Math.max(1, targetWidthPx / LAYOUT_BASE_WIDTH_PX);
-
-	document.documentElement.style.setProperty('--layout-scale', scale.toFixed(4));
-	elements.layout.classList.add('is-scaled');
-}
 
 function clampRatio(value) {
 	if (!Number.isFinite(value)) {
@@ -197,7 +168,7 @@ function renderTimeline(history) {
 	const yGrid = yTicks
 		.map((tick) => {
 			const y = height - padY - tick * graphHeight;
-			return `<g><line x1="${padX}" y1="${y}" x2="${width - padX}" y2="${y}" stroke="rgba(44,67,93,0.16)" stroke-width="1"/><text x="6" y="${y + 4}" fill="#698097" font-size="11">${Math.round(tick * 100)}%</text></g>`;
+			return `<g><line x1="${padX}" y1="${y}" x2="${width - padX}" y2="${y}" stroke="rgba(78,42,49,0.17)" stroke-width="1"/><text x="6" y="${y + 4}" fill="#74646b" font-size="11">${Math.round(tick * 100)}%</text></g>`;
 		})
 		.join('');
 
@@ -216,8 +187,8 @@ function renderTimeline(history) {
 		<path d="${areaPath}" fill="url(#area-fill)" />
 		<path d="${linePath}" fill="none" stroke="#0d9a83" stroke-width="3" stroke-linecap="round" />
 		<circle cx="${latestPoint.x.toFixed(1)}" cy="${latestPoint.y.toFixed(1)}" r="5" fill="#ef7347" />
-		<text x="${padX}" y="${height - 4}" fill="#6d7a88" font-size="11">${startLabel}</text>
-		<text x="${width - padX}" y="${height - 4}" text-anchor="end" fill="#6d7a88" font-size="11">${endLabel}</text>
+		<text x="${padX}" y="${height - 4}" fill="#74646b" font-size="11">${startLabel}</text>
+		<text x="${width - padX}" y="${height - 4}" text-anchor="end" fill="#74646b" font-size="11">${endLabel}</text>
 	`;
 
 	const latestRatio = history[history.length - 1].loadRatio;
@@ -488,10 +459,7 @@ function wireEventHandlers() {
 }
 
 wireEventHandlers();
-applyLayoutScale();
 void loadDashboard();
-
-window.addEventListener('resize', applyLayoutScale);
 
 setInterval(() => {
 	void loadDashboard();
