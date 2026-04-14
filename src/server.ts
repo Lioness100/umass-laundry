@@ -163,7 +163,7 @@ export function createServer(config: AppConfig, repository: LaundryRepository, p
 				const selectedRoom = requestedRoom && rooms.includes(requestedRoom) ? requestedRoom : null;
 
 				const history = repository.getUsageHistory(hours, selectedRoom ?? undefined);
-				const bestTimes = repository.getBestTimeWindows(days, 12, selectedRoom ?? undefined);
+				const bestTimes = repository.getBestTimeWindows(days, 3, selectedRoom ?? undefined);
 				const heatmap = repository.getLoadHeatmap(days, selectedRoom ?? undefined);
 				const current = repository.getCurrentAvailability();
 				const summary = computeSummary(history);
