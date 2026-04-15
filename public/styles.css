@@ -80,10 +80,24 @@ body {
 
 .hero {
   display: flex;
-  align-items: flex-start;
+  align-items: stretch;
   justify-content: space-between;
+  padding: 0;
+  overflow: hidden;
+}
+
+.hero-brand {
+  display: flex;
+  align-items: center;
   gap: clamp(1.05rem, 1.05vw, 1.5rem);
-  padding: clamp(1.3rem, 1.15vw + 0.85rem, 2rem);
+}
+
+.hero-logo {
+  width: 13vw;
+}
+
+.hero-titles {
+  padding: clamp(1.3rem, 1.15vw + 0.85rem, 2rem) 0;
 }
 
 .eyebrow {
@@ -113,6 +127,8 @@ body {
   display: grid;
   gap: 0.78rem;
   justify-items: end;
+  padding: clamp(1.3rem, 1.15vw + 0.85rem, 2rem);
+  padding-left: 0;
 }
 
 .status-pill {
@@ -470,10 +486,30 @@ tbody td {
 
   .hero {
     flex-direction: column;
+    padding: 0;
+  }
+
+  .hero-brand {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+  }
+
+  .hero-logo {
+    width: 100%;
+    height: 120px;
+    object-position: center;
+  }
+
+  .hero-titles {
+    padding: clamp(1.3rem, 1.15vw + 0.85rem, 2rem);
   }
 
   .hero-actions {
     justify-items: start;
+    padding-top: 0;
+    padding-left: clamp(1.3rem, 1.15vw + 0.85rem, 2rem);
+    padding-right: clamp(1.3rem, 1.15vw + 0.85rem, 2rem);
   }
 
   .controls {
@@ -508,4 +544,6 @@ tbody td {
 .fav-icon.inactive { filter: grayscale(100%); opacity: 0.2; }
 .fav-icon.inactive:hover { filter: grayscale(0%); opacity: 0.2; }
 .fav-icon.active { filter: grayscale(0%); opacity: 1; }
+
+
 
