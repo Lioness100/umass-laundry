@@ -1,10 +1,16 @@
+if ('scrollRestoration' in history) {
+	history.scrollRestoration = 'manual';
+}
+
 const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 const state = {
 	days: 21,
 	hours: 72,
 	room: '',
-	isLoading: false
+	isLoading: false,
+	favorites: new Set(JSON.parse(localStorage.getItem('favRooms') || '[]')),
+	latestCurrent: null
 };
 
 const elements = {
@@ -120,7 +126,13 @@ function syncRoomOptions(rooms) {
 	allOption.textContent = 'All rooms';
 	elements.roomSelect.append(allOption);
 
-	for (const room of rooms) {
+	const sortedRooms = [...rooms].sort((a, b) => {
+		const favA = state.favorites.has(a);
+		const favB = state.favorites.has(b);
+		return favA === favB ? a.localeCompare(b) : (favA ? -1 : 1);
+	});
+
+	for (const room of sortedRooms) {
 		const option = document.createElement('option');
 		option.value = room;
 		option.textContent = room;
@@ -264,20 +276,43 @@ function renderHeatmap(heatmap) {
 	}
 }
 
+function toggleFavorite(roomLabel) {
+	state.favorites.has(roomLabel) ? state.favorites.delete(roomLabel) : state.favorites.add(roomLabel);
+	localStorage.setItem('favRooms', JSON.stringify([...state.favorites]));
+
+	if (state.latestCurrent) {
+		syncRoomOptions(state.latestCurrent.rooms.map(r => r.label));
+	}
+
+	const uiIcon = document.querySelector(`.fav-cell[data-room="${roomLabel}"]`);
+	if (uiIcon) {
+		const isFav = state.favorites.has(roomLabel);
+		uiIcon.className = `fav-icon fav-cell ${isFav ? 'active' : 'inactive'}`;
+	}
+}
+
 function renderRoomTable(currentSnapshot) {
 	elements.roomsTableBody.innerHTML = '';
 
 	if (!currentSnapshot || !currentSnapshot.rooms.length) {
 		const row = document.createElement('tr');
-		row.innerHTML = '<td colspan="4" class="empty-state">No room data yet.</td>';
+		row.innerHTML = '<td colspan="5" class="empty-state">No room data yet.</td>';
 		elements.roomsTableBody.append(row);
 		return;
 	}
 
-	for (const room of currentSnapshot.rooms) {
+	const sortedRooms = [...currentSnapshot.rooms].sort((a, b) => {
+		const favA = state.favorites.has(a.label);
+		const favB = state.favorites.has(b.label);
+		return favA === favB ? a.label.localeCompare(b.label) : (favA ? -1 : 1);
+	});
+
+	for (const room of sortedRooms) {
 		const row = document.createElement('tr');
 		const loadColor = ratioToChipColor(room.loadRatio);
+		const isFav = state.favorites.has(room.label);
 		row.innerHTML = `
+			<td class="fav-table-cell"><span class="fav-icon fav-cell ${isFav ? 'active' : 'inactive'}" data-room="${room.label}">❤️</span></td>
 			<td>${room.label}</td>
 			<td>${room.availableWashers} / ${room.totalWashers}</td>
 			<td>${room.availableDryers} / ${room.totalDryers}</td>
@@ -367,6 +402,7 @@ function renderLastUpdated(data) {
 }
 
 function renderDashboard(data) {
+	state.latestCurrent = data.current;
 	syncRoomOptions(data.rooms);
 	renderStatus(data);
 	renderLastUpdated(data);
@@ -455,6 +491,13 @@ function wireEventHandlers() {
 	elements.roomSelect.addEventListener('change', () => {
 		state.room = elements.roomSelect.value;
 		void loadDashboard();
+	});
+
+	elements.roomsTableBody.addEventListener('click', (e) => {
+		const target = e.target.closest('.fav-cell');
+		if (target) {
+			toggleFavorite(target.dataset.room);
+		}
 	});
 }
 

@@ -493,3 +493,19 @@ tbody td {
     height: 15px;
   }
 }
+
+.fav-table-cell {
+  text-align: center;
+}
+
+.fav-icon {
+  cursor: pointer;
+  user-select: none;
+  display: inline-block;
+  transition: filter 0.2s ease, opacity 0.2s ease;
+}
+
+.fav-icon.inactive { filter: grayscale(100%); opacity: 0.2; }
+.fav-icon.inactive:hover { filter: grayscale(0%); opacity: 0.2; }
+.fav-icon.active { filter: grayscale(0%); opacity: 1; }
+
