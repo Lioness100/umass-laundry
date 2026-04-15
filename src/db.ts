@@ -1,8 +1,12 @@
+/* eslint-disable @typescript-eslint/naming-convention */
 // eslint-disable-next-line import/no-unresolved
 import { Database } from 'bun:sqlite';
 import type { LaundryRoomAvailability } from './ota';
 
-type PollStatus = 'success' | 'error';
+enum PollStatus {
+	Error = 'error',
+	Success = 'success'
+}
 
 export interface LoadTotals {
 	availableDryers: number;
@@ -20,30 +24,14 @@ export interface CurrentRoomSnapshot extends LoadTotals {
 	label: string;
 }
 
+export interface UsageHistoryPoint extends LoadTotals {
+	polledAt: string;
+}
+
 export interface CurrentAvailabilitySnapshot {
 	polledAt: string;
 	rooms: CurrentRoomSnapshot[];
 	totals: LoadTotals;
-}
-
-export interface UsageHistoryPoint {
-	dryersCapacity: number;
-	dryersInUse: number;
-	loadRatio: number;
-	polledAt: string;
-	totalCapacity: number;
-	totalInUse: number;
-	washersCapacity: number;
-	washersInUse: number;
-}
-
-export interface BestTimeWindow {
-	avgLoadRatio: number;
-	dayLabel: string;
-	dayOfWeek: number;
-	hourLabel: string;
-	hourOfDay: number;
-	sampleSize: number;
 }
 
 export interface HeatmapCell {
@@ -53,31 +41,46 @@ export interface HeatmapCell {
 	sampleSize: number;
 }
 
+export interface BestTimeWindow extends HeatmapCell {
+	dayLabel: string;
+	hourLabel: string;
+}
+
 export interface FailedPoll {
 	errorMessage: string;
 	polledAt: string;
 }
 
 const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-const ROOM_FILTER_SQL = 'AND rs.room_label = ?';
 
-function buildLoadTotals(availability: {
-	availableDryersCount: number;
-	availableWashersCount: number;
-	totalDryersCount: number;
-	totalWashersCount: number;
-}): LoadTotals {
-	const washersInUse = Math.max(availability.totalWashersCount - availability.availableWashersCount, 0);
-	const dryersInUse = Math.max(availability.totalDryersCount - availability.availableDryersCount, 0);
+interface DbCapacityRow {
+	available_dryers: number;
+	available_washers: number;
+	total_dryers: number;
+	total_washers: number;
+}
+
+function normalizeRoomLabel(rawLabel: string): string {
+	return (rawLabel.split('-')[0] ?? '')
+		.trim()
+		.toLowerCase()
+		.split(/\s+/)
+		.map((word) => `${word[0]?.toUpperCase() ?? ''}${word.slice(1)}`)
+		.join(' ');
+}
+
+function buildLoadTotals(row: DbCapacityRow): LoadTotals {
+	const washersInUse = row.total_washers - row.available_washers;
+	const dryersInUse = row.total_dryers - row.available_dryers;
 	const totalInUse = washersInUse + dryersInUse;
-	const totalCapacity = availability.totalWashersCount + availability.totalDryersCount;
+	const totalCapacity = row.total_washers + row.total_dryers;
 
 	return {
-		availableWashers: availability.availableWashersCount,
-		totalWashers: availability.totalWashersCount,
+		availableWashers: row.available_washers,
+		totalWashers: row.total_washers,
 		washersInUse,
-		availableDryers: availability.availableDryersCount,
-		totalDryers: availability.totalDryersCount,
+		availableDryers: row.available_dryers,
+		totalDryers: row.total_dryers,
 		dryersInUse,
 		totalInUse,
 		totalCapacity,
@@ -89,6 +92,29 @@ function asHourLabel(hour: number): string {
 	const suffix = hour >= 12 ? 'PM' : 'AM';
 	const normalizedHour = hour % 12 === 0 ? 12 : hour % 12;
 	return `${normalizedHour}:00 ${suffix}`;
+}
+
+function aggregateTimeSlots(history: UsageHistoryPoint[]): HeatmapCell[] {
+	const slots = new Map<string, { dayOfWeek: number; hourOfDay: number; sampleSize: number; sumLoadRatio: number }>();
+
+	for (const point of history) {
+		const polledAt = new Date(point.polledAt);
+		const dayOfWeek = polledAt.getDay();
+		const hourOfDay = polledAt.getHours();
+		const key = `${dayOfWeek}-${hourOfDay}`;
+
+		const existing = slots.get(key) ?? { dayOfWeek, hourOfDay, sampleSize: 0, sumLoadRatio: 0 };
+		existing.sampleSize++;
+		existing.sumLoadRatio += point.loadRatio;
+		slots.set(key, existing);
+	}
+
+	return [...slots.values()].map((slot) => ({
+		dayOfWeek: slot.dayOfWeek,
+		hourOfDay: slot.hourOfDay,
+		sampleSize: slot.sampleSize,
+		avgLoadRatio: slot.sumLoadRatio / slot.sampleSize
+	}));
 }
 
 export class LaundryRepository {
@@ -140,14 +166,9 @@ export class LaundryRepository {
 
 		this.db.run('BEGIN;');
 		try {
-			this.db
+			const { lastInsertRowid } = this.db
 				.query('INSERT INTO poll_runs (polled_at, polled_at_epoch, status, error_message) VALUES (?, ?, ?, ?);')
-				.run(polledAtIso, polledAtEpoch, 'success' satisfies PollStatus, null);
-
-			const idRow = this.db.query('SELECT last_insert_rowid() AS id;').get() as { id: number } | null;
-			if (!idRow) {
-				throw new Error('Could not read inserted run id.');
-			}
+				.run(polledAtIso, polledAtEpoch, PollStatus.Success, null);
 
 			const insertSnapshotStatement = this.db.query(
 				`INSERT INTO room_snapshots (
@@ -160,9 +181,28 @@ export class LaundryRepository {
 				) VALUES (?, ?, ?, ?, ?, ?);`
 			);
 
+			const mergedByRoom = new Map<string, LaundryRoomAvailability>();
+
 			for (const room of rooms) {
+				const normalizedLabel = normalizeRoomLabel(room.label);
+				if (!normalizedLabel || !room.totalWashersCount) {
+					continue;
+				}
+
+				const existing = mergedByRoom.get(normalizedLabel);
+				if (existing) {
+					existing.availableWashersCount += room.availableWashersCount;
+					existing.totalWashersCount += room.totalWashersCount;
+					existing.availableDryersCount += room.availableDryersCount;
+					existing.totalDryersCount += room.totalDryersCount;
+				} else {
+					mergedByRoom.set(normalizedLabel, { ...room, label: normalizedLabel });
+				}
+			}
+
+			for (const room of mergedByRoom.values()) {
 				insertSnapshotStatement.run(
-					idRow.id,
+					lastInsertRowid,
 					room.label,
 					room.availableWashersCount,
 					room.totalWashersCount,
@@ -183,7 +223,7 @@ export class LaundryRepository {
 		const polledAtEpoch = Math.floor(polledAt.getTime() / 1000);
 		this.db
 			.query('INSERT INTO poll_runs (polled_at, polled_at_epoch, status, error_message) VALUES (?, ?, ?, ?);')
-			.run(polledAtIso, polledAtEpoch, 'error' satisfies PollStatus, errorMessage);
+			.run(polledAtIso, polledAtEpoch, PollStatus.Error, errorMessage);
 	}
 
 	public getLatestSuccessfulPollAt(): string | null {
@@ -194,9 +234,12 @@ export class LaundryRepository {
 	}
 
 	public getDistinctRooms(): string[] {
-		const rows = this.db.query('SELECT DISTINCT room_label FROM room_snapshots ORDER BY room_label ASC;').all() as {
-			room_label: string;
-		}[];
+		const rows = this.db
+			.query(
+				'SELECT DISTINCT room_label FROM room_snapshots WHERE total_washers + total_dryers > 0 ORDER BY room_label ASC;'
+			)
+			.all() as { room_label: string }[];
+
 		return rows.map((row) => row.room_label);
 	}
 
@@ -223,225 +266,80 @@ export class LaundryRepository {
 				WHERE run_id = ?
 				ORDER BY room_label ASC;`
 			)
-			.all(latestRun.id) as {
-			available_dryers: number;
-			available_washers: number;
-			room_label: string;
-			total_dryers: number;
-			total_washers: number;
-		}[];
+			.all(latestRun.id) as (DbCapacityRow & { room_label: string })[];
 
-		const rooms = rows.map((row) => {
-			const loadTotals = buildLoadTotals({
-				availableWashersCount: row.available_washers,
-				totalWashersCount: row.total_washers,
-				availableDryersCount: row.available_dryers,
-				totalDryersCount: row.total_dryers
-			});
-
-			return {
-				label: row.room_label,
-				...loadTotals
-			};
-		});
-
-		const totals = rooms.reduce<LoadTotals>(
-			(acc, room) => ({
-				availableWashers: acc.availableWashers + room.availableWashers,
-				totalWashers: acc.totalWashers + room.totalWashers,
-				washersInUse: acc.washersInUse + room.washersInUse,
-				availableDryers: acc.availableDryers + room.availableDryers,
-				totalDryers: acc.totalDryers + room.totalDryers,
-				dryersInUse: acc.dryersInUse + room.dryersInUse,
-				totalInUse: acc.totalInUse + room.totalInUse,
-				totalCapacity: acc.totalCapacity + room.totalCapacity,
-				loadRatio: 0
-			}),
-			{
-				availableWashers: 0,
-				totalWashers: 0,
-				washersInUse: 0,
-				availableDryers: 0,
-				totalDryers: 0,
-				dryersInUse: 0,
-				totalInUse: 0,
-				totalCapacity: 0,
-				loadRatio: 0
-			}
-		);
-
-		totals.loadRatio = totals.totalCapacity === 0 ? 0 : totals.totalInUse / totals.totalCapacity;
-
-		return {
-			polledAt: latestRun.polled_at,
-			rooms,
-			totals
+		const rooms: CurrentRoomSnapshot[] = [];
+		const totalCounts: DbCapacityRow = {
+			available_washers: 0,
+			total_washers: 0,
+			available_dryers: 0,
+			total_dryers: 0
 		};
+
+		for (const row of rows) {
+			rooms.push({ label: row.room_label, ...buildLoadTotals(row) });
+			totalCounts.available_washers += row.available_washers;
+			totalCounts.total_washers += row.total_washers;
+			totalCounts.available_dryers += row.available_dryers;
+			totalCounts.total_dryers += row.total_dryers;
+		}
+
+		return { polledAt: latestRun.polled_at, rooms, totals: buildLoadTotals(totalCounts) };
 	}
 
 	public getUsageHistory(hours: number, roomLabel?: string): UsageHistoryPoint[] {
 		const secondsBack = Math.floor(hours * 3600);
-		const roomFilterSql = roomLabel ? ROOM_FILTER_SQL : '';
-		const query = `
+		const normalizedRoomLabel = roomLabel ? normalizeRoomLabel(roomLabel) : null;
+
+		let query = `
 			SELECT
 				pr.polled_at,
-				SUM(rs.total_washers - rs.available_washers) AS washers_in_use,
-				SUM(rs.total_washers) AS washers_capacity,
-				SUM(rs.total_dryers - rs.available_dryers) AS dryers_in_use,
-				SUM(rs.total_dryers) AS dryers_capacity
+				SUM(rs.available_washers) AS available_washers,
+				SUM(rs.total_washers) AS total_washers,
+				SUM(rs.available_dryers) AS available_dryers,
+				SUM(rs.total_dryers) AS total_dryers
 			FROM poll_runs pr
 			INNER JOIN room_snapshots rs ON rs.run_id = pr.id
 			WHERE pr.status = 'success'
 			AND pr.polled_at_epoch >= strftime('%s', 'now') - ?
-			${roomFilterSql}
-			GROUP BY pr.id, pr.polled_at, pr.polled_at_epoch
-			ORDER BY pr.polled_at_epoch ASC;
 		`;
 
-		const rows = roomLabel
-			? (this.db.query(query).all(secondsBack, roomLabel) as {
-					dryers_capacity: number;
-					dryers_in_use: number;
-					polled_at: string;
-					washers_capacity: number;
-					washers_in_use: number;
-				}[])
-			: (this.db.query(query).all(secondsBack) as {
-					dryers_capacity: number;
-					dryers_in_use: number;
-					polled_at: string;
-					washers_capacity: number;
-					washers_in_use: number;
-				}[]);
+		const params: (number | string)[] = [secondsBack];
 
-		return rows.map((row) => {
-			const washersInUse = Number(row.washers_in_use) || 0;
-			const washersCapacity = Number(row.washers_capacity) || 0;
-			const dryersInUse = Number(row.dryers_in_use) || 0;
-			const dryersCapacity = Number(row.dryers_capacity) || 0;
-			const totalInUse = washersInUse + dryersInUse;
-			const totalCapacity = washersCapacity + dryersCapacity;
+		if (normalizedRoomLabel) {
+			query += ` AND rs.room_label = ?\n`;
+			params.push(normalizedRoomLabel);
+		}
 
-			return {
-				polledAt: row.polled_at,
-				washersInUse,
-				washersCapacity,
-				dryersInUse,
-				dryersCapacity,
-				totalInUse,
-				totalCapacity,
-				loadRatio: totalCapacity === 0 ? 0 : totalInUse / totalCapacity
-			};
-		});
+		query += ` GROUP BY pr.id ORDER BY pr.polled_at_epoch ASC, pr.id ASC;`;
+
+		const rows = this.db.query(query).all(...params) as (DbCapacityRow & { polled_at: string })[];
+
+		return rows.map((row) => ({ polledAt: row.polled_at, ...buildLoadTotals(row) }));
 	}
 
 	public getBestTimeWindows(days: number, limit: number, roomLabel?: string): BestTimeWindow[] {
-		const secondsBack = Math.floor(days * 24 * 3600);
-		const roomFilterSql = roomLabel ? ROOM_FILTER_SQL : '';
-		const query = `
-			WITH run_loads AS (
-				SELECT
-					pr.id AS run_id,
-					pr.polled_at_epoch AS polled_at_epoch,
-					SUM(rs.total_washers - rs.available_washers + rs.total_dryers - rs.available_dryers) AS total_in_use,
-					SUM(rs.total_washers + rs.total_dryers) AS total_capacity
-				FROM poll_runs pr
-				INNER JOIN room_snapshots rs ON rs.run_id = pr.id
-				WHERE pr.status = 'success'
-				AND pr.polled_at_epoch >= strftime('%s', 'now') - ?
-				${roomFilterSql}
-				GROUP BY pr.id, pr.polled_at_epoch
-				HAVING total_capacity > 0
+		return aggregateTimeSlots(this.getUsageHistory(days * 24, roomLabel))
+			.filter((slot) => slot.sampleSize >= 2)
+			.sort(
+				(left, right) =>
+					left.avgLoadRatio - right.avgLoadRatio ||
+					right.sampleSize - left.sampleSize ||
+					left.dayOfWeek - right.dayOfWeek ||
+					left.hourOfDay - right.hourOfDay
 			)
-			SELECT
-				CAST(strftime('%w', polled_at_epoch, 'unixepoch') AS INTEGER) AS day_of_week,
-				CAST(strftime('%H', polled_at_epoch, 'unixepoch') AS INTEGER) AS hour_of_day,
-				AVG(CAST(total_in_use AS REAL) / total_capacity) AS avg_load_ratio,
-				COUNT(*) AS sample_size
-			FROM run_loads
-			GROUP BY day_of_week, hour_of_day
-			HAVING COUNT(*) >= 2
-			ORDER BY avg_load_ratio ASC, sample_size DESC
-			LIMIT ?;
-		`;
-
-		const rows = roomLabel
-			? (this.db.query(query).all(secondsBack, roomLabel, limit) as {
-					avg_load_ratio: number;
-					day_of_week: number;
-					hour_of_day: number;
-					sample_size: number;
-				}[])
-			: (this.db.query(query).all(secondsBack, limit) as {
-					avg_load_ratio: number;
-					day_of_week: number;
-					hour_of_day: number;
-					sample_size: number;
-				}[]);
-
-		return rows.map((row) => {
-			const dayOfWeek = Number(row.day_of_week);
-			const hourOfDay = Number(row.hour_of_day);
-
-			return {
-				dayOfWeek,
-				dayLabel: DAY_LABELS[dayOfWeek] ?? String(dayOfWeek),
-				hourOfDay,
-				hourLabel: asHourLabel(hourOfDay),
-				avgLoadRatio: Number(row.avg_load_ratio) || 0,
-				sampleSize: Number(row.sample_size) || 0
-			};
-		});
+			.slice(0, limit)
+			.map((slot) => ({
+				...slot,
+				dayLabel: DAY_LABELS[slot.dayOfWeek] ?? String(slot.dayOfWeek),
+				hourLabel: asHourLabel(slot.hourOfDay)
+			}));
 	}
 
 	public getLoadHeatmap(days: number, roomLabel?: string): HeatmapCell[] {
-		const secondsBack = Math.floor(days * 24 * 3600);
-		const roomFilterSql = roomLabel ? ROOM_FILTER_SQL : '';
-		const query = `
-			WITH run_loads AS (
-				SELECT
-					pr.id AS run_id,
-					pr.polled_at_epoch AS polled_at_epoch,
-					SUM(rs.total_washers - rs.available_washers + rs.total_dryers - rs.available_dryers) AS total_in_use,
-					SUM(rs.total_washers + rs.total_dryers) AS total_capacity
-				FROM poll_runs pr
-				INNER JOIN room_snapshots rs ON rs.run_id = pr.id
-				WHERE pr.status = 'success'
-				AND pr.polled_at_epoch >= strftime('%s', 'now') - ?
-				${roomFilterSql}
-				GROUP BY pr.id, pr.polled_at_epoch
-				HAVING total_capacity > 0
-			)
-			SELECT
-				CAST(strftime('%w', polled_at_epoch, 'unixepoch') AS INTEGER) AS day_of_week,
-				CAST(strftime('%H', polled_at_epoch, 'unixepoch') AS INTEGER) AS hour_of_day,
-				AVG(CAST(total_in_use AS REAL) / total_capacity) AS avg_load_ratio,
-				COUNT(*) AS sample_size
-			FROM run_loads
-			GROUP BY day_of_week, hour_of_day
-			ORDER BY day_of_week ASC, hour_of_day ASC;
-		`;
-
-		const rows = roomLabel
-			? (this.db.query(query).all(secondsBack, roomLabel) as {
-					avg_load_ratio: number;
-					day_of_week: number;
-					hour_of_day: number;
-					sample_size: number;
-				}[])
-			: (this.db.query(query).all(secondsBack) as {
-					avg_load_ratio: number;
-					day_of_week: number;
-					hour_of_day: number;
-					sample_size: number;
-				}[]);
-
-		return rows.map((row) => ({
-			dayOfWeek: Number(row.day_of_week),
-			hourOfDay: Number(row.hour_of_day),
-			avgLoadRatio: Number(row.avg_load_ratio) || 0,
-			sampleSize: Number(row.sample_size) || 0
-		}));
+		return aggregateTimeSlots(this.getUsageHistory(days * 24, roomLabel)).sort(
+			(left, right) => left.dayOfWeek - right.dayOfWeek || left.hourOfDay - right.hourOfDay
+		);
 	}
 
 	public getRecentFailures(limit = 10): FailedPoll[] {
@@ -457,10 +355,7 @@ export class LaundryRepository {
 
 		return rows
 			.filter((row) => typeof row.error_message === 'string' && row.error_message.length > 0)
-			.map((row) => ({
-				polledAt: row.polled_at,
-				errorMessage: row.error_message!
-			}));
+			.map((row) => ({ polledAt: row.polled_at, errorMessage: row.error_message! }));
 	}
 
 	public close(): void {

@@ -43,24 +43,13 @@ function asJsonResponse(payload: unknown, status = 200) {
 }
 
 function parseClampedInt(value: string | null, fallback: number, min: number, max: number): number {
-	if (!value) {
-		return fallback;
-	}
+	const parsed = Number.parseInt(value!);
+	return Number.isNaN(parsed) ? fallback : Math.min(Math.max(parsed, min), max);
+}
 
-	const parsed = Number.parseInt(value);
-	if (!Number.isFinite(parsed)) {
-		return fallback;
-	}
-
-	if (parsed < min) {
-		return min;
-	}
-
-	if (parsed > max) {
-		return max;
-	}
-
-	return parsed;
+function getAverage(points: UsageHistoryPoint[]): number | null {
+	const sum = points.reduce((acc, point) => acc + point.loadRatio, 0);
+	return points.length === 0 ? null : sum / points.length;
 }
 
 function computeSummary(history: UsageHistoryPoint[]): DashboardSummary {
@@ -75,35 +64,17 @@ function computeSummary(history: UsageHistoryPoint[]): DashboardSummary {
 		};
 	}
 
-	let sum = 0;
-	let min = Number.POSITIVE_INFINITY;
-	let max = Number.NEGATIVE_INFINITY;
-
-	for (const point of history) {
-		sum += point.loadRatio;
-		min = Math.min(min, point.loadRatio);
-		max = Math.max(max, point.loadRatio);
-	}
-
-	const latest = history.at(-1)?.loadRatio ?? null;
-	const sampleWindowSize = Math.min(12, history.length);
-	const recentWindow = history.slice(-sampleWindowSize);
-	const previousWindow = history.slice(-sampleWindowSize * 2, -sampleWindowSize);
-
-	const recentAverage =
-		recentWindow.reduce((acc, point) => acc + point.loadRatio, 0) / Math.max(recentWindow.length, 1);
-	const previousAverage =
-		previousWindow.length === 0
-			? null
-			: previousWindow.reduce((acc, point) => acc + point.loadRatio, 0) / previousWindow.length;
+	const loadRatios = history.map((p) => p.loadRatio);
+	const recentAvg = getAverage(history.slice(-12));
+	const prevAvg = getAverage(history.slice(-24, -12));
 
 	return {
 		samples: history.length,
-		averageLoadRatio: sum / history.length,
-		minLoadRatio: min,
-		maxLoadRatio: max,
-		latestLoadRatio: latest,
-		recentTrendDelta: previousAverage === null ? null : recentAverage - previousAverage
+		averageLoadRatio: loadRatios.reduce((a, b) => a + b, 0) / history.length,
+		minLoadRatio: Math.min(...loadRatios),
+		maxLoadRatio: Math.max(...loadRatios),
+		latestLoadRatio: loadRatios.at(-1) ?? null,
+		recentTrendDelta: prevAvg !== null && recentAvg !== null ? recentAvg - prevAvg : null
 	};
 }
 
@@ -114,11 +85,7 @@ async function serveStatic(pathname: string): Promise<Response | null> {
 	}
 
 	const file = Bun.file(`public${normalizedPath}`);
-	if (!(await file.exists())) {
-		return null;
-	}
-
-	return new Response(file);
+	return (await file.exists()) ? new Response(file) : null;
 }
 
 export function createServer(config: AppConfig, repository: LaundryRepository, poller: LaundryPoller): Bun.Server {
