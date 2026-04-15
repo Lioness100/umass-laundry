@@ -10,30 +10,18 @@ function parseNumberEnv(name: string, options: NumberEnvOptions): number {
 		return options.defaultValue;
 	}
 
-	const parsedValue = Number(rawValue);
-	if (!Number.isFinite(parsedValue)) {
+	const parsed = Number(rawValue);
+	if (!Number.isFinite(parsed)) {
 		throw new TypeError(`${name} must be a number.`);
 	}
-
-	if (typeof options.min === 'number' && parsedValue < options.min) {
+	if (options.min !== undefined && parsed < options.min) {
 		throw new Error(`${name} must be >= ${options.min}.`);
 	}
-
-	if (typeof options.max === 'number' && parsedValue > options.max) {
+	if (options.max !== undefined && parsed > options.max) {
 		throw new Error(`${name} must be <= ${options.max}.`);
 	}
 
-	return parsedValue;
-}
-
-function parseOptionalStringEnv(name: string): string | null {
-	const rawValue = Bun.env[name];
-	if (!rawValue) {
-		return null;
-	}
-
-	const trimmedValue = rawValue.trim();
-	return trimmedValue.length > 0 ? trimmedValue : null;
+	return parsed;
 }
 
 export interface AppConfig {
@@ -69,7 +57,7 @@ export const config: AppConfig = {
 	databasePath: Bun.env.DATABASE_PATH ?? 'laundry.db',
 	pollIntervalMs: pollIntervalMinutes * 60 * 1000,
 	requestTimeoutMs,
-	otaClientId: Bun.env.OTA_CLIENT_ID ?? '',
-	otaRefreshToken: parseOptionalStringEnv('OTA_REFRESH_TOKEN'),
-	otaRefreshTokenStatePath: parseOptionalStringEnv('OTA_REFRESH_TOKEN_STATE_PATH')
+	otaClientId: Bun.env.OTA_CLIENT_ID!,
+	otaRefreshToken: Bun.env.OTA_REFRESH_TOKEN ?? null,
+	otaRefreshTokenStatePath: Bun.env.OTA_REFRESH_TOKEN_STATE_PATH ?? null
 };

@@ -44,25 +44,22 @@ export class LaundryPoller {
 		}
 
 		if (!hasOtaAuthConfigured(this.config)) {
-			const message = 'Polling is disabled until OTA_CLIENT_ID and OTA_REFRESH_TOKEN are configured.';
-			this.status.lastError = message;
-			console.warn(`[poller] ${message}`);
+			this.status.lastError = 'Polling is disabled until OTA_CLIENT_ID and OTA_REFRESH_TOKEN are configured.';
+			console.warn(`[poller] ${this.status.lastError}`);
 			return;
 		}
 
 		this.status.isRunning = true;
 		await this.pollNow();
 
-		this.timer = setInterval(() => {
-			void this.pollNow();
-		}, this.config.pollIntervalMs);
+		this.timer = setInterval(() => void this.pollNow(), this.config.pollIntervalMs);
 	}
 
 	public stop() {
 		if (this.timer) {
 			clearInterval(this.timer);
-			this.timer = null;
 		}
+		this.timer = null;
 		this.status.isRunning = false;
 	}
 

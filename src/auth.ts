@@ -36,22 +36,12 @@ async function loadRefreshTokenFromStatePath(config: AppConfig): Promise<string 
 	if (!config.otaRefreshTokenStatePath) {
 		return null;
 	}
-
 	const stateFile = Bun.file(config.otaRefreshTokenStatePath);
-	if (!(await stateFile.exists())) {
-		return null;
-	}
-
-	const persistedToken = (await stateFile.text()).trim();
-	return persistedToken.length > 0 ? persistedToken : null;
+	return (await stateFile.exists()) ? (await stateFile.text()).trim() || null : null;
 }
 
 function getPersistedRefreshToken(config: AppConfig): Promise<string | null> {
-	if (persistedRefreshTokenPromise === null) {
-		persistedRefreshTokenPromise = loadRefreshTokenFromStatePath(config);
-	}
-
-	return persistedRefreshTokenPromise;
+	return (persistedRefreshTokenPromise ??= loadRefreshTokenFromStatePath(config));
 }
 
 async function persistRefreshTokenToStatePath(config: AppConfig, refreshToken: string): Promise<void> {
@@ -64,29 +54,14 @@ async function persistRefreshTokenToStatePath(config: AppConfig, refreshToken: s
 }
 
 async function getEffectiveRefreshToken(config: AppConfig): Promise<string | null> {
-	if (rotatedRefreshToken !== null) {
-		return rotatedRefreshToken;
-	}
-
-	const persistedToken = await getPersistedRefreshToken(config);
-	if (persistedToken !== null) {
-		return persistedToken;
-	}
-
-	return config.otaRefreshToken;
+	return rotatedRefreshToken ?? (await getPersistedRefreshToken(config)) ?? config.otaRefreshToken;
 }
 
 function getCachedAuthorizationHeader(): string | null {
-	if (!cachedCognitoTokenSet) {
+	if (!cachedCognitoTokenSet || Date.now() + COGNITO_TOKEN_LEEWAY_MS >= cachedCognitoTokenSet.expiresAtMs) {
 		return null;
 	}
-
-	if (Date.now() + COGNITO_TOKEN_LEEWAY_MS >= cachedCognitoTokenSet.expiresAtMs) {
-		return null;
-	}
-
-	const selectedToken = cachedCognitoTokenSet.idToken ?? cachedCognitoTokenSet.accessToken;
-	return `${cachedCognitoTokenSet.tokenType} ${selectedToken}`;
+	return `${cachedCognitoTokenSet.tokenType} ${cachedCognitoTokenSet.idToken}`;
 }
 
 async function requestTokensFromRefreshToken(config: AppConfig): Promise<CognitoTokenSet> {
@@ -173,9 +148,6 @@ export async function getOtaAuthorizationHeader(config: AppConfig): Promise<stri
 		throw new Error('Cognito refresh flow could not be started.');
 	}
 
-	const refreshedTokenSet = await inFlightCognitoRefresh;
-	cachedCognitoTokenSet = refreshedTokenSet;
-
-	const selectedToken = refreshedTokenSet.idToken ?? refreshedTokenSet.accessToken;
-	return `${refreshedTokenSet.tokenType} ${selectedToken}`;
+	cachedCognitoTokenSet = await inFlightCognitoRefresh;
+	return `${cachedCognitoTokenSet.tokenType} ${cachedCognitoTokenSet.idToken}`;
 }

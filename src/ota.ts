@@ -2,15 +2,7 @@ import type { AppConfig } from './config';
 import { getOtaAuthorizationHeader } from './auth';
 
 interface AvailabilityResponse {
-	rooms: AvailabilityResponseRoom[];
-}
-
-interface AvailabilityResponseRoom {
-	availableDryersCount: number;
-	availableWashersCount: number;
-	label: string;
-	totalDryersCount: number;
-	totalWashersCount: number;
+	rooms: LaundryRoomAvailability[];
 }
 
 export interface LaundryRoomAvailability {
