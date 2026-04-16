@@ -105,16 +105,18 @@ function getDashboardQuery() {
 
 function ratioToHeatColor(ratio) {
 	const normalized = clampRatio(ratio);
-	const hue = 160 - normalized * 140;
+	const adjusted = Math.sqrt(normalized);
+	const hue = Math.round(160 - adjusted * 140);
 	const saturation = 74;
-	const lightness = 92 - normalized * 46;
-	return `hsl(${hue} ${saturation}% ${lightness}%)`;
+	const lightness = Math.round(92 - adjusted * 46);
+	return `hsl(${hue}, ${saturation}%, ${lightness}%)`;
 }
 
 function ratioToChipColor(ratio) {
 	const normalized = clampRatio(ratio);
-	const hue = 145 - normalized * 120;
-	return `hsl(${hue} 64% 42%)`;
+	const adjusted = Math.sqrt(normalized);
+	const hue = Math.round(145 - adjusted * 120);
+	return `hsl(${hue}, 64%, 42%)`;
 }
 
 function syncRoomOptions(rooms) {
